@@ -4,12 +4,21 @@ from flask import request, render_template
 from flask import request, jsonify
 from flask.views import MethodView
 
-def row2dict(row):
+
+def row2dict(row, column_names=None):
     """Given a row, it returns a dict."""
-    d = {}
-    for column in row.__table__.columns:
-        d[column.name] = getattr(row, column.name)
-    return d
+    if column_names is None:
+        d = {}
+        for column in row.__table__.columns:
+            d[column.name] = getattr(row, column.name)
+        return d
+    else:
+        d = {}
+        for column in row.__table__.columns:
+            if column.name in column_names:
+                d[column.name] = getattr(row, column.name)
+        return d
+
 
 def model_crud(session, model, form_values, form_keys, primary_key=None, primary_key_val=None, item_id=None):
     """
@@ -19,14 +28,17 @@ def model_crud(session, model, form_values, form_keys, primary_key=None, primary
         model_crud(db.session, MenuItem, fields, params, item_id)
 
     """
+    print(primary_key, primary_key_val)
     print('model crude')
     # if the item_id is not None that means that we are about to update an entry in the database.
+    
     if item_id is not None:
+        print('Item Exists Therefore PUT')
         item = model.query.get(item_id)
     # We are about to create an entry in the database.
     else:
+        print('New ITem')
         item = model()
-
     formated_form_values = []
     for form_value in form_values:
         if (not form_value) | (form_value is None):
@@ -50,10 +62,13 @@ def model_crud(session, model, form_values, form_keys, primary_key=None, primary
             session.add(item)
             session.commit()
 
-def render_table(session, model, template_location='main/email.html', argument_name='project_id', model_name='email',
-                 page_name="Budget Data Collection", params=['first_name', 'last_name', 'email', 'token'], exclude=['token']):
+def render_table(session, model, template_location='main/email.html', argument_name='item_id', model_name='email', model_name2=None,
+                 page_name="Budget Data Collection", params=['first_name', 'last_name', 'email', 'token'], exclude=['token'], modal_info=None, item_id=None, primary_key=None,primary_key_val=None, datatables_fields=None):
     print('RENDER TABLE')
     form_params = [p for p in params if p not in exclude]
+    da = model.modal_info()
+    primary_key = da['primary_key']
+    primary_key_val = da['primary_key_val']
     if request.method == 'POST':  # this block is only entered when the form is submitted
         print('post request')
         fields = []
@@ -61,13 +76,13 @@ def render_table(session, model, template_location='main/email.html', argument_n
             field = request.form.get(param, None)
             print(field)
             fields.append(field)
-        item_id = request.args.get(argument_name, None, int)
-        model_crud(session, model, fields, form_params, item_id=item_id)
+        print('item_id',item_id)
+        model_crud(session, model, fields, form_params, item_id=item_id,primary_key=primary_key,primary_key_val=primary_key_val)
     fields = params[:]
     fields.insert(0, 'id')
     print(params)
     params_jso = json.dumps(form_params)
-    return render_template(template_location, headers=fields, name=page_name, model=model_name, params=params_jso)
+    return render_template(template_location, headers=fields, name=page_name, model=model_name, model_name2=model_name2, params=params_jso, **model.modal_info())#json.dumps(datatables_fields))
 
 
 def set_foo(some_object, foo_string, value):
@@ -94,21 +109,31 @@ class ModelCrudAPI(MethodView):
         self.model = model
         self.db = db
 
-    def get(self):
-        store_id = request.args.get("store_id", None, int)
-        query_items = self.model.query.filter_by(store_id=store_id).all()
-        if query_items is None or store_id is None:
-            return jsonify({'items': [], 'store_id': store_id}), 204
+    def get(self, iid):
+        # store_id = request.args.get("store_id", None, int)
+        # TODO change the store_id to some string value
+        query_items = self.model.query.filter_by(store_id=iid).all()
+        if query_items is None or iid is None:
+            return jsonify({'items': [], 'store_id': iid}), 204
         else:
             items = []
             for item in query_items:
                 print(item.id)
                 items.append(row2dict(item))
-            return jsonify({"items": items, 'store_id': store_id})
+            return jsonify({"items": items,"columns": [
 
-    def post(self):
-        store_id = request.args.get("store_id", None, int)
-        if store_id is None:
+                { "data": "id" },
+                { "data": "first_name" },
+                { "data": "last_name" },
+                { "data": "username" },
+                { "data": "email" },
+                { "data": "position" }
+                
+            ], 'store_id': iid})
+
+    def post(self, iid):
+        # store_i/d = request.args.get("store_id", None, int)
+        if iid is None:
             return jsonify({'error': 'No store id'}), 400
         else:
             try:
@@ -116,7 +141,7 @@ class ModelCrudAPI(MethodView):
                 if len(data) == 0:
                     return jsonify({'error': 'no body'}), 400
                 else:
-                    data["store_id"] = store_id
+                    data["store_id"] = iid
                     item = self.model(**dict(data))
                     self.db.session.add(item)
                     self.db.session.commit()
@@ -124,9 +149,9 @@ class ModelCrudAPI(MethodView):
             except KeyError as e:
                 return jsonify({'error': str(e)}), 400
 
-    def put(self):
-        item_id = request.args.get("item_id", None, int)
-        if item_id is None:
+    def put(self, iid):
+        # item_id = request.args.get("item_id", None, int)
+        if iid is None:
             return jsonify({'error': 'No store id'}), 400
         else:
             try:
@@ -134,16 +159,16 @@ class ModelCrudAPI(MethodView):
                 if len(data) == 0:
                     return jsonify({'error': 'no body'}), 400
                 else:
-                    data["id"] = item_id
-                    self.model.query.filter_by(id=item_id).update(dict(data))
+                    data["id"] = iid
+                    self.model.query.filter_by(id=iid).update(dict(data))
                     self.db.session.commit()
                     return jsonify({"status": "updated"})
             except KeyError as e:
                 return jsonify({'error': str(e)}), 400
 
-    def delete(self):
-        item_id = request.args.get("item_id", None, type=int)
-        item = self.model.query.filter_by(id=item_id).first()
+    def delete(self, iid):
+        # item_id = request.args.get("item_id", None, type=int)
+        item = self.model.query.filter_by(id=iid).first()
         if item is None:
             return jsonify({"error": "not found!"}), 404
         else:
