@@ -1,4 +1,4 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 
 setup(name='flask_datatables',
       version='0.1',
@@ -7,5 +7,8 @@ setup(name='flask_datatables',
       author='George Pamfilis',
       author_email='gpamfilis@gmail.com',
       license='MIT',
-      packages=['flask_datatables'],
-      zip_safe=False, install_requires=['flask'])
+      platforms='any',
+      packages=find_packages(),
+      zip_safe=False, 
+      install_requires=['Flask>=0.10'],
+      include_package_data=True)
