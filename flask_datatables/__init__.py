@@ -25,7 +25,6 @@ class Datatable(object):
     @property
     def html(self):
         pa = 'datatables/datatables.html'
-
         print('render html')
         html = Markup(self.render(pa))
         print(html)
